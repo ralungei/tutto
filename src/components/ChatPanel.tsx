@@ -49,6 +49,9 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
     startListening,
     stopListening,
     isSupported: micSupported,
+    sttMode,
+    setSttMode,
+    isTranscribing,
   } = useSpeechRecognition();
 
   const scrollToBottom = useCallback(() => {
@@ -66,12 +69,11 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
     }
   }, [transcript]);
 
-  const handleMicToggle = () => {
+  const handleMicToggle = async () => {
     if (isListening) {
-      stopListening();
-      // Auto-send after stopping if we have a transcript
-      if (transcript.trim()) {
-        setTimeout(() => sendMessage(), 100);
+      const text = await stopListening();
+      if (text.trim()) {
+        sendMessage(text);
       }
     } else {
       setInput("");
@@ -79,8 +81,8 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
     }
   };
 
-  const sendMessage = async () => {
-    const messageText = input.trim() || transcript.trim();
+  const sendMessage = async (overrideText?: string) => {
+    const messageText = overrideText?.trim() || input.trim() || transcript.trim();
     if (!messageText || isLoading) return;
 
     if (isListening) {
@@ -283,16 +285,29 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setAutoPlayAudio(!autoPlayAudio)}
-          className={`text-xs px-2 py-1 rounded-md transition-colors ${
-            autoPlayAudio
-              ? "bg-violet-600/20 text-violet-300 border border-violet-500/30"
-              : "bg-zinc-800 text-zinc-500 border border-zinc-700"
-          }`}
-        >
-          {autoPlayAudio ? "Audio ON" : "Audio OFF"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSttMode(sttMode === "elevenlabs" ? "browser" : "elevenlabs")}
+            className={`text-xs px-2 py-1 rounded-md transition-colors ${
+              sttMode === "elevenlabs"
+                ? "bg-emerald-600/20 text-emerald-300 border border-emerald-500/30"
+                : "bg-zinc-800 text-zinc-500 border border-zinc-700"
+            }`}
+            title={sttMode === "elevenlabs" ? "STT: ElevenLabs (Scribe)" : "STT: Browser nativo"}
+          >
+            {sttMode === "elevenlabs" ? "STT: EL" : "STT: Nav"}
+          </button>
+          <button
+            onClick={() => setAutoPlayAudio(!autoPlayAudio)}
+            className={`text-xs px-2 py-1 rounded-md transition-colors ${
+              autoPlayAudio
+                ? "bg-violet-600/20 text-violet-300 border border-violet-500/30"
+                : "bg-zinc-800 text-zinc-500 border border-zinc-700"
+            }`}
+          >
+            {autoPlayAudio ? "Audio ON" : "Audio OFF"}
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -478,12 +493,20 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
 
       {/* Input */}
       <div className="p-4 border-t border-zinc-800">
-        {/* Recording indicator */}
+        {/* Recording / transcribing indicator */}
         {isListening && (
           <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30">
             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <span className="text-xs text-red-400">
-              Escuchando... {transcript && `"${transcript}"`}
+              Escuchando... {sttMode === "browser" && transcript && `"${transcript}"`}
+            </span>
+          </div>
+        )}
+        {isTranscribing && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+            <Loader2 size={12} className="animate-spin text-emerald-400" />
+            <span className="text-xs text-emerald-400">
+              Transcribiendo con ElevenLabs...
             </span>
           </div>
         )}
@@ -506,19 +529,28 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
           {micSupported && (
             <button
               onClick={handleMicToggle}
+              disabled={isTranscribing}
               className={`p-2 m-1 rounded-lg transition-colors ${
                 isListening
                   ? "bg-red-500 text-white animate-pulse"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                  : isTranscribing
+                    ? "text-emerald-400 animate-pulse bg-zinc-800"
+                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
               }`}
             >
-              {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+              {isTranscribing ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : isListening ? (
+                <MicOff size={16} />
+              ) : (
+                <Mic size={16} />
+              )}
             </button>
           )}
 
           {/* Send button */}
           <button
-            onClick={sendMessage}
+            onClick={() => sendMessage()}
             disabled={
               (!input.trim() && !transcript.trim()) || isLoading
             }
