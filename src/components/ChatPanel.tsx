@@ -62,12 +62,12 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Update input with speech transcript
+  // Update input with speech transcript (browser mode only - shows interim results live)
   useEffect(() => {
-    if (transcript) {
+    if (transcript && sttMode === "browser") {
       setInput(transcript);
     }
-  }, [transcript]);
+  }, [transcript, sttMode]);
 
   const handleMicToggle = async () => {
     if (isListening) {
@@ -108,6 +108,13 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
       hasAudio: false,
     };
     setMessages((prev) => [...prev, assistantMessage]);
+
+    const updateMsg = (patch: Partial<Message>) =>
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMessage.id ? { ...m, ...patch } : m
+        )
+      );
 
     try {
       const apiMessages = updatedMessages.map((m) => ({
@@ -153,13 +160,7 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
           switch (data.type) {
             case "text_delta":
               currentText += data.text;
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMessage.id
-                    ? { ...m, content: currentText }
-                    : m
-                )
-              );
+              updateMsg({ content: currentText });
               break;
 
             case "tool_start":
@@ -168,26 +169,14 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
                 tool: data.tool,
                 status: "started",
               });
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMessage.id
-                    ? { ...m, toolActions: [...toolActions] }
-                    : m
-                )
-              );
+              updateMsg({ toolActions: [...toolActions] });
               break;
 
             case "tool_input": {
               const action = toolActions.find((a) => a.id === data.id);
               if (action) {
                 action.input = data.input;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessage.id
-                      ? { ...m, toolActions: [...toolActions] }
-                      : m
-                  )
-                );
+                updateMsg({ toolActions: [...toolActions] });
               }
               break;
             }
@@ -196,13 +185,7 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
               const action = toolActions.find((a) => a.id === data.id);
               if (action) {
                 action.status = "executing";
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessage.id
-                      ? { ...m, toolActions: [...toolActions] }
-                      : m
-                  )
-                );
+                updateMsg({ toolActions: [...toolActions] });
               }
               break;
             }
@@ -212,38 +195,20 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
               if (action) {
                 action.status = "done";
                 action.result = data.result;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessage.id
-                      ? { ...m, toolActions: [...toolActions] }
-                      : m
-                  )
-                );
+                updateMsg({ toolActions: [...toolActions] });
               }
               break;
             }
 
             case "done":
               if (currentText.trim()) {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessage.id
-                      ? { ...m, hasAudio: true }
-                      : m
-                  )
-                );
+                updateMsg({ hasAudio: true });
               }
               break;
 
             case "error":
               currentText += `\n\n**Error:** ${data.error}`;
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMessage.id
-                    ? { ...m, content: currentText }
-                    : m
-                )
-              );
+              updateMsg({ content: currentText });
               break;
           }
         }
@@ -251,13 +216,7 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
     } catch (error) {
       const errorMsg =
         error instanceof Error ? error.message : "Error desconocido";
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantMessage.id
-            ? { ...m, content: `Error: ${errorMsg}` }
-            : m
-        )
-      );
+      updateMsg({ content: `Error: ${errorMsg}` });
     } finally {
       setIsLoading(false);
     }

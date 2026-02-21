@@ -23,7 +23,10 @@ export async function POST(req: Request) {
     const body = new FormData();
     body.append("file", audioFile, "audio.webm");
     body.append("model_id", "scribe_v2");
-    body.append("language_code", formData.get("language_code")?.toString() || "");
+    const languageCode = formData.get("language_code")?.toString();
+    if (languageCode) {
+      body.append("language_code", languageCode);
+    }
 
     const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
       method: "POST",
