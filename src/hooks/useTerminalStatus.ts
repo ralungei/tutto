@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { fetchAuth } from "@/lib/fetch-auth";
 
 export type TerminalStatus = "connected" | "disconnected" | "checking";
 
@@ -9,7 +10,7 @@ export function useTerminalStatus() {
 
   const checkConnection = useCallback(async () => {
     try {
-      const response = await fetch("/api/pty", {
+      const response = await fetchAuth("/api/pty", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "ping" }),

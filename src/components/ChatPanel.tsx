@@ -15,6 +15,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import AudioMessage from "./AudioMessage";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { fetchAuth } from "@/lib/fetch-auth";
 
 interface ToolAction {
   id: string;
@@ -122,7 +123,7 @@ export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) 
         content: m.content,
       }));
 
-      const response = await fetch("/api/chat", {
+      const response = await fetchAuth("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: apiMessages, terminalAvailable }),

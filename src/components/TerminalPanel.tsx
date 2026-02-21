@@ -14,6 +14,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
+import { fetchAuth, authUrl } from "@/lib/fetch-auth";
 
 export interface TerminalPanelHandle {
   sendInput: (text: string) => void;
@@ -32,7 +33,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(
   // Send input to the PTY via API
   const sendInput = async (data: string) => {
     try {
-      await fetch("/api/pty", {
+      await fetchAuth("/api/pty", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "input", data }),
@@ -44,7 +45,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(
 
   const sendResize = async (cols: number, rows: number) => {
     try {
-      await fetch("/api/pty", {
+      await fetchAuth("/api/pty", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "resize", cols, rows }),
@@ -123,7 +124,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(
       }
 
       // Connect to PTY output via SSE
-      const es = new EventSource("/api/pty");
+      const es = new EventSource(authUrl("/api/pty"));
       eventSourceRef.current = es;
 
       es.onmessage = (event) => {

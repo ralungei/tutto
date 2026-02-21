@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Volume2 } from "lucide-react";
+import { fetchAuth, authUrl } from "@/lib/fetch-auth";
 
 export function SpeechListener() {
   const [speaking, setSpeaking] = useState(false);
@@ -9,7 +10,7 @@ export function SpeechListener() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const eventSource = new EventSource("/api/speak");
+    const eventSource = new EventSource(authUrl("/api/speak"));
 
     eventSource.onmessage = async (event) => {
       try {
@@ -20,7 +21,7 @@ export function SpeechListener() {
         setSpeaking(true);
 
         // Fetch TTS audio
-        const response = await fetch("/api/tts", {
+        const response = await fetchAuth("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: data.text }),

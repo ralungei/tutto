@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Play, Pause, Volume2, Loader2 } from "lucide-react";
+import { fetchAuth } from "@/lib/fetch-auth";
 
 interface AudioMessageProps {
   text: string;
@@ -39,7 +40,7 @@ export default function AudioMessage({ text, messageId }: AudioMessageProps) {
     setStatus("loading");
 
     try {
-      const response = await fetch("/api/tts", {
+      const response = await fetchAuth("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),

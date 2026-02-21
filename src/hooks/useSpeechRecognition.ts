@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { fetchAuth } from "@/lib/fetch-auth";
 
 export type SttMode = "elevenlabs" | "browser";
 
@@ -103,7 +104,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
           const form = new FormData();
           form.append("file", blob, "audio.webm");
 
-          const res = await fetch("/api/stt", { method: "POST", body: form });
+          const res = await fetchAuth("/api/stt", { method: "POST", body: form });
           const data = await res.json();
           const text = data.text || "";
           setTranscript(text);
