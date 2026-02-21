@@ -105,7 +105,7 @@ export default function Home() {
               : "md:w-full"
           } ${activePanel === "chat" ? "w-full" : "hidden md:block"} border-r border-zinc-800`}
         >
-          <ChatPanel terminalAvailable={terminalStatus === "connected"} />
+          <ChatPanel />
         </div>
 
         {/* Terminal panel - only show when connected */}

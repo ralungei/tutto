@@ -14,7 +14,6 @@ npm run dev
 
 | Variable | Requerida | Descripción |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Sí | API key de Anthropic para el chat con IA |
 | `ELEVENLABS_API_KEY` | No | API key de ElevenLabs para respuestas de voz (TTS) |
 | `ELEVENLABS_VOICE_ID` | No | ID de la voz de ElevenLabs (por defecto "Rachel") |
 | `TUTTO_SECRET` | No | Token de acceso para proteger la app |
@@ -41,5 +40,5 @@ TUTTO_SECRET=mi-token-super-secreto
 
 - **Frontend**: Next.js 16, React, Tailwind CSS, xterm.js
 - **Backend**: Next.js API routes, node-pty
-- **IA**: Claude (Anthropic API)
+- **IA**: Claude Code (via terminal PTY + MCP speak tool)
 - **Voz**: ElevenLabs (TTS/STT), Web Speech API (fallback)

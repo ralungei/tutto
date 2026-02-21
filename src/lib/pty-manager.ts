@@ -56,27 +56,6 @@ export function writeToPty(data: string) {
   getManager().process.write(data);
 }
 
-export function getRecentOutput(maxChars: number = 8000): string {
-  const buffer = getManager().outputBuffer;
-  let result = "";
-  for (let i = buffer.length - 1; i >= 0; i--) {
-    if (result.length + buffer[i].length > maxChars) break;
-    result = buffer[i] + result;
-  }
-  return result;
-}
-
-// Strip ANSI escape codes for clean text reading
-export function getRecentOutputClean(maxChars: number = 8000): string {
-  const raw = getRecentOutput(maxChars);
-  // Remove ANSI escape sequences
-  return raw.replace(
-    // eslint-disable-next-line no-control-regex
-    /\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b\[\?[0-9;]*[a-zA-Z]/g,
-    ""
-  );
-}
-
 export function addOutputListener(cb: (data: string) => void): () => void {
   const manager = getManager();
   manager.listeners.add(cb);
