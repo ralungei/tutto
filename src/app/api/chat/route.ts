@@ -101,6 +101,15 @@ async function executeTool(
 export async function POST(req: Request) {
   const { messages, terminalAvailable = true } = await req.json();
 
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return Response.json({ error: "messages must be a non-empty array" }, { status: 400 });
+  }
+  for (const m of messages) {
+    if (!m.role || !m.content || typeof m.content !== "string" || !["user", "assistant"].includes(m.role)) {
+      return Response.json({ error: "Invalid message format" }, { status: 400 });
+    }
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return Response.json(

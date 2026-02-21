@@ -16,7 +16,8 @@ export async function POST(req: Request) {
   }
 
   // Default voice: "Rachel" - a natural conversational voice
-  const selectedVoice = voice_id || process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
+  const rawVoice = voice_id || process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
+  const selectedVoice = /^[a-zA-Z0-9]+$/.test(rawVoice) ? rawVoice : "21m00Tcm4TlvDq8ikWAM";
 
   try {
     const response = await fetch(

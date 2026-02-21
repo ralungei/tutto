@@ -58,12 +58,20 @@ export async function POST(req: Request) {
   const body = await req.json();
 
   if (body.type === "input") {
+    if (typeof body.data !== "string") {
+      return Response.json({ error: "data must be a string" }, { status: 400 });
+    }
     writeToPty(body.data);
     return Response.json({ ok: true });
   }
 
   if (body.type === "resize") {
-    resizePty(body.cols, body.rows);
+    const cols = Number(body.cols);
+    const rows = Number(body.rows);
+    if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 1 || rows < 1 || cols > 500 || rows > 200) {
+      return Response.json({ error: "Invalid resize dimensions" }, { status: 400 });
+    }
+    resizePty(cols, rows);
     return Response.json({ ok: true });
   }
 
