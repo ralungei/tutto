@@ -1,20 +1,13 @@
 "use client";
 
-import { useRef, useCallback, useState } from "react";
+import { useState } from "react";
 import ChatPanel from "@/components/ChatPanel";
-import TerminalPanel, { TerminalPanelHandle } from "@/components/TerminalPanel";
+import TerminalPanel from "@/components/TerminalPanel";
 import { Bot, Terminal, PanelLeftClose, PanelLeft } from "lucide-react";
 
 export default function Home() {
-  const terminalRef = useRef<TerminalPanelHandle>(null);
   const [activePanel, setActivePanel] = useState<"chat" | "terminal">("chat");
   const [showBoth, setShowBoth] = useState(true);
-
-  const handleRunCommand = useCallback((command: string, cwd?: string) => {
-    terminalRef.current?.executeCommand(command, cwd);
-    // Switch to show terminal on mobile
-    setActivePanel("terminal");
-  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-zinc-950">
@@ -75,7 +68,7 @@ export default function Home() {
             showBoth ? "md:w-1/2" : "md:w-full"
           } ${activePanel === "chat" ? "w-full" : "hidden md:block"} border-r border-zinc-800`}
         >
-          <ChatPanel onRunCommand={handleRunCommand} />
+          <ChatPanel />
         </div>
 
         {/* Terminal panel */}
@@ -85,7 +78,7 @@ export default function Home() {
               activePanel === "terminal" ? "w-full" : "hidden md:block"
             }`}
           >
-            <TerminalPanel ref={terminalRef} />
+            <TerminalPanel />
           </div>
         )}
       </div>

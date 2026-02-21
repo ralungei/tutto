@@ -1,26 +1,51 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Bot, User, Terminal as TerminalIcon, Loader2 } from "lucide-react";
+import {
+  Send,
+  Bot,
+  User,
+  Terminal as TerminalIcon,
+  Loader2,
+  Eye,
+  Play,
+  Mic,
+  MicOff,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import AudioMessage from "./AudioMessage";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+
+interface ToolAction {
+  id: string;
+  tool: string;
+  input?: Record<string, unknown>;
+  result?: string;
+  status: "started" | "executing" | "done";
+}
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
-  commands?: { command: string; cwd?: string }[];
+  toolActions?: ToolAction[];
+  hasAudio?: boolean;
 }
 
-interface ChatPanelProps {
-  onRunCommand: (command: string, cwd?: string) => void;
-}
-
-export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
+export default function ChatPanel() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [autoPlayAudio, setAutoPlayAudio] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const {
+    isListening,
+    transcript,
+    startListening,
+    stopListening,
+    isSupported: micSupported,
+  } = useSpeechRecognition();
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -30,13 +55,38 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Update input with speech transcript
+  useEffect(() => {
+    if (transcript) {
+      setInput(transcript);
+    }
+  }, [transcript]);
+
+  const handleMicToggle = () => {
+    if (isListening) {
+      stopListening();
+      // Auto-send after stopping if we have a transcript
+      if (transcript.trim()) {
+        setTimeout(() => sendMessage(), 100);
+      }
+    } else {
+      setInput("");
+      startListening();
+    }
+  };
+
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+    const messageText = input.trim() || transcript.trim();
+    if (!messageText || isLoading) return;
+
+    if (isListening) {
+      stopListening();
+    }
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: input.trim(),
+      content: messageText,
     };
 
     const updatedMessages = [...messages, userMessage];
@@ -48,7 +98,8 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
       id: crypto.randomUUID(),
       role: "assistant",
       content: "",
-      commands: [],
+      toolActions: [],
+      hasAudio: false,
     };
     setMessages((prev) => [...prev, assistantMessage]);
 
@@ -74,9 +125,7 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
 
       const decoder = new TextDecoder();
       let currentText = "";
-      let toolJson = "";
-      let currentToolId = "";
-      const commands: { command: string; cwd?: string }[] = [];
+      const toolActions: ToolAction[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -87,7 +136,13 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const data = JSON.parse(line.slice(6));
+
+          let data;
+          try {
+            data = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
 
           switch (data.type) {
             case "text_delta":
@@ -100,38 +155,80 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
                 )
               );
               break;
+
             case "tool_start":
-              toolJson = "";
-              currentToolId = data.id;
+              toolActions.push({
+                id: data.id,
+                tool: data.tool,
+                status: "started",
+              });
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessage.id
+                    ? { ...m, toolActions: [...toolActions] }
+                    : m
+                )
+              );
               break;
-            case "tool_delta":
-              toolJson += data.json;
-              break;
-            case "block_stop":
-              if (currentToolId && toolJson) {
-                try {
-                  const toolInput = JSON.parse(toolJson);
-                  if (toolInput.command) {
-                    commands.push({
-                      command: toolInput.command,
-                      cwd: toolInput.cwd,
-                    });
-                    currentText += `\n\n> **Comando:** \`${toolInput.command}\`\n`;
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMessage.id
-                          ? { ...m, content: currentText, commands: [...commands] }
-                          : m
-                      )
-                    );
-                  }
-                } catch {
-                  // partial JSON, ignore
-                }
-                currentToolId = "";
-                toolJson = "";
+
+            case "tool_input": {
+              const action = toolActions.find((a) => a.id === data.id);
+              if (action) {
+                action.input = data.input;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessage.id
+                      ? { ...m, toolActions: [...toolActions] }
+                      : m
+                  )
+                );
               }
               break;
+            }
+
+            case "tool_executing": {
+              const action = toolActions.find((a) => a.id === data.id);
+              if (action) {
+                action.status = "executing";
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessage.id
+                      ? { ...m, toolActions: [...toolActions] }
+                      : m
+                  )
+                );
+              }
+              break;
+            }
+
+            case "tool_result": {
+              const action = toolActions.find((a) => a.id === data.id);
+              if (action) {
+                action.status = "done";
+                action.result = data.result;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessage.id
+                      ? { ...m, toolActions: [...toolActions] }
+                      : m
+                  )
+                );
+              }
+              break;
+            }
+
+            case "done":
+              if (currentText.trim()) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessage.id
+                      ? { ...m, hasAudio: true }
+                      : m
+                  )
+                );
+              }
+              break;
+
             case "error":
               currentText += `\n\n**Error:** ${data.error}`;
               setMessages((prev) =>
@@ -145,13 +242,9 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
           }
         }
       }
-
-      // Auto-execute commands from AI
-      for (const cmd of commands) {
-        onRunCommand(cmd.command, cmd.cwd);
-      }
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : "Error desconocido";
+      const errorMsg =
+        error instanceof Error ? error.message : "Error desconocido";
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantMessage.id
@@ -174,14 +267,26 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
   return (
     <div className="flex flex-col h-full bg-zinc-950">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
-        <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center">
-          <Bot size={18} className="text-white" />
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center">
+            <Bot size={18} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-100">Tutto</h2>
+            <p className="text-xs text-zinc-500">Voz + Terminal + IA</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-sm font-semibold text-zinc-100">Tutto</h2>
-          <p className="text-xs text-zinc-500">Tu asistente para todo</p>
-        </div>
+        <button
+          onClick={() => setAutoPlayAudio(!autoPlayAudio)}
+          className={`text-xs px-2 py-1 rounded-md transition-colors ${
+            autoPlayAudio
+              ? "bg-violet-600/20 text-violet-300 border border-violet-500/30"
+              : "bg-zinc-800 text-zinc-500 border border-zinc-700"
+          }`}
+        >
+          {autoPlayAudio ? "Audio ON" : "Audio OFF"}
+        </button>
       </div>
 
       {/* Messages */}
@@ -196,15 +301,15 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
                 Hola, soy Tutto
               </h3>
               <p className="text-sm text-zinc-500 mt-1 max-w-sm">
-                Tu asistente personal. Puedo ejecutar comandos en la terminal,
-                responder preguntas, y ayudarte con lo que necesites.
+                Habla conmigo por texto o por voz. Puedo ejecutar comandos,
+                controlar Claude Code en la terminal, y responderte con audio.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 justify-center max-w-md">
               {[
-                "Muestra los archivos del directorio actual",
-                "Cual es mi IP?",
-                "Instala las dependencias del proyecto",
+                "Ejecuta ls -la en la terminal",
+                "Abre Claude Code en la terminal",
+                "Cual es el uso de disco?",
               ].map((suggestion) => (
                 <button
                   key={suggestion}
@@ -222,9 +327,7 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
           <div key={message.id} className="flex gap-3">
             <div
               className={`w-7 h-7 rounded-lg flex-shrink-0 flex items-center justify-center ${
-                message.role === "user"
-                  ? "bg-zinc-700"
-                  : "bg-violet-600"
+                message.role === "user" ? "bg-zinc-700" : "bg-violet-600"
               }`}
             >
               {message.role === "user" ? (
@@ -234,65 +337,177 @@ export default function ChatPanel({ onRunCommand }: ChatPanelProps) {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <div
-                className={`text-sm leading-relaxed ${
-                  message.role === "user"
-                    ? "text-zinc-300"
-                    : "text-zinc-200"
-                }`}
-              >
-                {message.role === "assistant" ? (
-                  <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-pre:bg-zinc-800 prose-pre:border prose-pre:border-zinc-700 prose-code:text-violet-300">
-                    <ReactMarkdown>{message.content}</ReactMarkdown>
-                  </div>
-                ) : (
-                  <p>{message.content}</p>
-                )}
-              </div>
-              {message.commands && message.commands.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {message.commands.map((cmd, i) => (
-                    <button
-                      key={i}
-                      onClick={() => onRunCommand(cmd.command, cmd.cwd)}
-                      className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-md bg-zinc-800 border border-zinc-700 text-violet-300 hover:bg-zinc-700 transition-colors"
+              {/* Tool actions */}
+              {message.toolActions && message.toolActions.length > 0 && (
+                <div className="mb-2 space-y-1.5">
+                  {message.toolActions.map((action) => (
+                    <div
+                      key={action.id}
+                      className="flex items-start gap-2 text-xs p-2 rounded-lg bg-zinc-900 border border-zinc-800"
                     >
-                      <TerminalIcon size={12} />
-                      Re-ejecutar: {cmd.command}
-                    </button>
+                      <div className="mt-0.5">
+                        {action.tool === "send_to_terminal" ? (
+                          <Play
+                            size={12}
+                            className={
+                              action.status === "done"
+                                ? "text-green-400"
+                                : "text-yellow-400 animate-pulse"
+                            }
+                          />
+                        ) : (
+                          <Eye
+                            size={12}
+                            className={
+                              action.status === "done"
+                                ? "text-blue-400"
+                                : "text-yellow-400 animate-pulse"
+                            }
+                          />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-zinc-300">
+                            {action.tool === "send_to_terminal" ? (
+                              <>
+                                <TerminalIcon
+                                  size={10}
+                                  className="inline mr-1"
+                                />
+                                Enviado a terminal
+                              </>
+                            ) : (
+                              <>
+                                <Eye size={10} className="inline mr-1" />
+                                Leyendo terminal
+                              </>
+                            )}
+                          </span>
+                          {action.status === "executing" && (
+                            <Loader2
+                              size={10}
+                              className="animate-spin text-yellow-400"
+                            />
+                          )}
+                        </div>
+                        {action.input &&
+                          action.tool === "send_to_terminal" && (
+                            <code className="block mt-1 text-violet-300 bg-zinc-800 px-2 py-0.5 rounded truncate">
+                              {String(
+                                (action.input as Record<string, unknown>)
+                                  .text || ""
+                              )
+                                .replace(/\n/g, "\\n")
+                                .slice(0, 100)}
+                            </code>
+                          )}
+                        {action.result &&
+                          action.tool === "read_terminal" && (
+                            <pre className="mt-1 text-zinc-500 bg-zinc-800 px-2 py-1 rounded max-h-20 overflow-y-auto whitespace-pre-wrap text-[10px]">
+                              {action.result}
+                            </pre>
+                          )}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
+
+              {/* Message content */}
+              {message.content && (
+                <div
+                  className={`text-sm leading-relaxed ${
+                    message.role === "user"
+                      ? "text-zinc-300"
+                      : "text-zinc-200"
+                  }`}
+                >
+                  {message.role === "assistant" ? (
+                    <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-pre:bg-zinc-800 prose-pre:border prose-pre:border-zinc-700 prose-code:text-violet-300">
+                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <p>{message.content}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Audio player for assistant messages */}
+              {message.role === "assistant" &&
+                message.hasAudio &&
+                autoPlayAudio &&
+                message.content && (
+                  <div className="mt-2">
+                    <AudioMessage
+                      text={message.content}
+                      messageId={message.id}
+                    />
+                  </div>
+                )}
             </div>
           </div>
         ))}
 
-        {isLoading && messages[messages.length - 1]?.content === "" && (
-          <div className="flex items-center gap-2 text-zinc-500 text-sm pl-10">
-            <Loader2 size={14} className="animate-spin" />
-            Pensando...
-          </div>
-        )}
+        {isLoading &&
+          messages[messages.length - 1]?.content === "" &&
+          (messages[messages.length - 1]?.toolActions?.length ?? 0) ===
+            0 && (
+            <div className="flex items-center gap-2 text-zinc-500 text-sm pl-10">
+              <Loader2 size={14} className="animate-spin" />
+              Pensando...
+            </div>
+          )}
 
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
       <div className="p-4 border-t border-zinc-800">
+        {/* Recording indicator */}
+        {isListening && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30">
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-xs text-red-400">
+              Escuchando... {transcript && `"${transcript}"`}
+            </span>
+          </div>
+        )}
+
         <div className="flex items-end gap-2 bg-zinc-900 rounded-xl border border-zinc-700 focus-within:border-violet-500 transition-colors">
           <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Escribe un mensaje o pide ejecutar un comando..."
+            placeholder={
+              isListening ? "Escuchando..." : "Escribe o habla..."
+            }
             rows={1}
             className="flex-1 resize-none bg-transparent text-sm text-zinc-200 placeholder-zinc-600 px-4 py-3 outline-none max-h-32"
             style={{ minHeight: "44px" }}
           />
+
+          {/* Mic button */}
+          {micSupported && (
+            <button
+              onClick={handleMicToggle}
+              className={`p-2 m-1 rounded-lg transition-colors ${
+                isListening
+                  ? "bg-red-500 text-white animate-pulse"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+              }`}
+            >
+              {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+            </button>
+          )}
+
+          {/* Send button */}
           <button
             onClick={sendMessage}
-            disabled={!input.trim() || isLoading}
+            disabled={
+              (!input.trim() && !transcript.trim()) || isLoading
+            }
             className="p-2 m-1 rounded-lg bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <Send size={16} />

@@ -1,130 +1,60 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from "react";
-import { Terminal as TerminalIcon, X, Maximize2, Minimize2 } from "lucide-react";
+import {
+  useRef,
+  useEffect,
+  useState,
+  useImperativeHandle,
+  forwardRef,
+} from "react";
+import {
+  Terminal as TerminalIcon,
+  X,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
 export interface TerminalPanelHandle {
-  executeCommand: (command: string, cwd?: string) => void;
+  sendInput: (text: string) => void;
 }
 
-const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(_, ref) {
+const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(
+  _,
+  ref
+) {
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const [isReady, setIsReady] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
-  const [cwd, setCwd] = useState("~");
-  const inputBufferRef = useRef("");
-  const abortRef = useRef<AbortController | null>(null);
-  const historyRef = useRef<string[]>([]);
-  const historyIndexRef = useRef(-1);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
-  const writePrompt = useCallback(() => {
-    if (xtermRef.current) {
-      xtermRef.current.write(`\r\n\x1b[36mtutto\x1b[0m:\x1b[33m${cwd}\x1b[0m$ `);
+  // Send input to the PTY via API
+  const sendInput = async (data: string) => {
+    try {
+      await fetch("/api/pty", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "input", data }),
+      });
+    } catch (err) {
+      console.error("Failed to send input to PTY:", err);
     }
-  }, [cwd]);
+  };
 
-  const executeCommand = useCallback(
-    async (command: string, cmdCwd?: string) => {
-      const term = xtermRef.current;
-      if (!term || isRunning) return;
+  const sendResize = async (cols: number, rows: number) => {
+    try {
+      await fetch("/api/pty", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "resize", cols, rows }),
+      });
+    } catch {
+      // ignore resize errors
+    }
+  };
 
-      setIsRunning(true);
-      const workingDir = cmdCwd || cwd === "~" ? process.env.HOME || "/" : cwd;
-
-      // Show the command being executed
-      term.write(`\r\n\x1b[90m$ ${command}\x1b[0m\r\n`);
-
-      historyRef.current.push(command);
-      historyIndexRef.current = -1;
-
-      abortRef.current = new AbortController();
-
-      try {
-        const response = await fetch("/api/terminal", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ command, cwd: workingDir }),
-          signal: abortRef.current.signal,
-        });
-
-        if (!response.ok) {
-          term.write(`\x1b[31mError: ${response.statusText}\x1b[0m\r\n`);
-          setIsRunning(false);
-          writePrompt();
-          return;
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) return;
-
-        const decoder = new TextDecoder();
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const events = chunk.split("\n\n");
-
-          for (const event of events) {
-            if (!event.startsWith("data: ")) continue;
-            try {
-              const data = JSON.parse(event.slice(6));
-
-              switch (data.type) {
-                case "stdout":
-                  // Replace newlines with \r\n for proper xterm rendering
-                  term.write(data.data.replace(/\n/g, "\r\n"));
-                  break;
-                case "stderr":
-                  term.write(`\x1b[31m${data.data.replace(/\n/g, "\r\n")}\x1b[0m`);
-                  break;
-                case "exit":
-                  if (data.data !== "0") {
-                    term.write(`\r\n\x1b[31m[exit code: ${data.data}]\x1b[0m`);
-                  }
-                  break;
-                case "error":
-                  term.write(`\r\n\x1b[31mError: ${data.data}\x1b[0m`);
-                  break;
-              }
-            } catch {
-              // skip malformed events
-            }
-          }
-        }
-
-        // Try to update cwd after command
-        if (command.startsWith("cd ")) {
-          const newDir = command.slice(3).trim();
-          if (newDir === "~" || newDir === "") {
-            setCwd("~");
-          } else if (newDir.startsWith("/")) {
-            setCwd(newDir);
-          } else {
-            setCwd((prev) => (prev === "~" ? `~/${newDir}` : `${prev}/${newDir}`));
-          }
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          term.write("\r\n\x1b[33m[cancelled]\x1b[0m");
-        } else {
-          const msg = error instanceof Error ? error.message : "Unknown error";
-          term.write(`\r\n\x1b[31mError: ${msg}\x1b[0m`);
-        }
-      } finally {
-        setIsRunning(false);
-        abortRef.current = null;
-        writePrompt();
-      }
-    },
-    [cwd, isRunning, writePrompt]
-  );
-
-  useImperativeHandle(ref, () => ({ executeCommand }), [executeCommand]);
+  useImperativeHandle(ref, () => ({ sendInput }), []);
 
   useEffect(() => {
     let mounted = true;
@@ -139,7 +69,8 @@ const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(_, 
       const term = new Terminal({
         cursorBlink: true,
         fontSize: 13,
-        fontFamily: "var(--font-geist-mono), 'Fira Code', 'Cascadia Code', monospace",
+        fontFamily:
+          "'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace",
         theme: {
           background: "#09090b",
           foreground: "#e4e4e7",
@@ -174,86 +105,16 @@ const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(_, 
 
       xtermRef.current = term;
 
-      // Welcome message
-      term.write("\x1b[1;35m  Tutto Terminal\x1b[0m\r\n");
-      term.write("\x1b[90m  Escribe comandos o pide ayuda al chat\x1b[0m\r\n");
-      term.write(`\r\n\x1b[36mtutto\x1b[0m:\x1b[33m~\x1b[0m$ `);
-
-      // Handle user input
+      // Forward all keyboard input to the PTY
       term.onData((data) => {
-        if (!xtermRef.current) return;
-
-        switch (data) {
-          case "\r": // Enter
-            {
-              const cmd = inputBufferRef.current.trim();
-              inputBufferRef.current = "";
-              if (cmd) {
-                // Don't write prompt here, executeCommand handles it
-                executeCommand(cmd);
-              } else {
-                term.write(`\r\n\x1b[36mtutto\x1b[0m:\x1b[33m~\x1b[0m$ `);
-              }
-            }
-            break;
-          case "\x7f": // Backspace
-            if (inputBufferRef.current.length > 0) {
-              inputBufferRef.current = inputBufferRef.current.slice(0, -1);
-              term.write("\b \b");
-            }
-            break;
-          case "\x03": // Ctrl+C
-            if (abortRef.current) {
-              abortRef.current.abort();
-            } else {
-              inputBufferRef.current = "";
-              term.write("^C");
-              term.write(`\r\n\x1b[36mtutto\x1b[0m:\x1b[33m~\x1b[0m$ `);
-            }
-            break;
-          case "\x1b[A": // Up arrow
-            if (historyRef.current.length > 0) {
-              if (historyIndexRef.current === -1) {
-                historyIndexRef.current = historyRef.current.length - 1;
-              } else if (historyIndexRef.current > 0) {
-                historyIndexRef.current--;
-              }
-              // Clear current input
-              while (inputBufferRef.current.length > 0) {
-                term.write("\b \b");
-                inputBufferRef.current = inputBufferRef.current.slice(0, -1);
-              }
-              const cmd = historyRef.current[historyIndexRef.current];
-              inputBufferRef.current = cmd;
-              term.write(cmd);
-            }
-            break;
-          case "\x1b[B": // Down arrow
-            if (historyIndexRef.current !== -1) {
-              while (inputBufferRef.current.length > 0) {
-                term.write("\b \b");
-                inputBufferRef.current = inputBufferRef.current.slice(0, -1);
-              }
-              if (historyIndexRef.current < historyRef.current.length - 1) {
-                historyIndexRef.current++;
-                const cmd = historyRef.current[historyIndexRef.current];
-                inputBufferRef.current = cmd;
-                term.write(cmd);
-              } else {
-                historyIndexRef.current = -1;
-              }
-            }
-            break;
-          default:
-            if (data >= " " && !data.startsWith("\x1b")) {
-              inputBufferRef.current += data;
-              term.write(data);
-            }
-            break;
-        }
+        sendInput(data);
       });
 
       // Handle resize
+      term.onResize(({ cols, rows }) => {
+        sendResize(cols, rows);
+      });
+
       const resizeObserver = new ResizeObserver(() => {
         fitAddon.fit();
       });
@@ -261,11 +122,33 @@ const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(_, 
         resizeObserver.observe(termRef.current);
       }
 
+      // Connect to PTY output via SSE
+      const es = new EventSource("/api/pty");
+      eventSourceRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "output") {
+            term.write(data.data);
+          } else if (data.type === "connected") {
+            // Send initial resize
+            sendResize(term.cols, term.rows);
+          }
+        } catch {
+          // ignore parse errors
+        }
+      };
+
+      es.onerror = () => {
+        // EventSource will auto-reconnect
+        console.warn("Terminal SSE connection lost, reconnecting...");
+      };
+
       setIsReady(true);
 
       return () => {
         resizeObserver.disconnect();
-        term.dispose();
       };
     };
 
@@ -273,22 +156,21 @@ const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(_, 
 
     return () => {
       mounted = false;
+      eventSourceRef.current?.close();
       xtermRef.current?.dispose();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div className={`flex flex-col h-full bg-[#09090b] ${isMaximized ? "fixed inset-0 z-50" : ""}`}>
+    <div
+      className={`flex flex-col h-full bg-[#09090b] ${isMaximized ? "fixed inset-0 z-50" : ""}`}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-950">
         <div className="flex items-center gap-2">
           <TerminalIcon size={14} className="text-violet-400" />
           <span className="text-xs font-medium text-zinc-400">Terminal</span>
-          {isRunning && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400">
-              ejecutando...
-            </span>
-          )}
+          <span className="text-xs text-zinc-600">PTY persistente</span>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -301,7 +183,6 @@ const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(_, 
             onClick={() => {
               if (xtermRef.current) {
                 xtermRef.current.clear();
-                writePrompt();
               }
             }}
             className="p-1 rounded hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-colors"
@@ -319,7 +200,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle>(function TerminalPanel(_, 
       />
       {!isReady && (
         <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
-          Cargando terminal...
+          Conectando a la terminal...
         </div>
       )}
     </div>
