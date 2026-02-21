@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "tutto-speak": {
+      "command": "node",
+      "args": ["scripts/mcp-speak-server.js"],
+      "env": {
+        "TUTTO_URL": "http://localhost:3000"
+      }
+    }
+  }
+}
