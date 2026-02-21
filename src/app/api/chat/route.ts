@@ -99,7 +99,7 @@ async function executeTool(
 }
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  const { messages, terminalAvailable = true } = await req.json();
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -114,6 +114,24 @@ export async function POST(req: Request) {
 
   const client = new Anthropic({ apiKey });
   const encoder = new TextEncoder();
+
+  const SYSTEM_PROMPT_OFFLINE = `Eres "Tutto", un asistente personal inteligente. Tu nombre viene del italiano "tutto" = "todo".
+
+Actualmente NO tienes acceso a la terminal del usuario (está desconectada o inaccesible).
+Puedes ayudar con:
+- Responder preguntas sobre cualquier tema
+- Programación, explicaciones, brainstorming
+- Cualquier cosa que no requiera ejecutar comandos
+
+Si el usuario pide ejecutar algo en la terminal, dile que la terminal no está disponible ahora mismo y que necesita conectarse desde su Mac.
+
+Reglas:
+- Responde en el mismo idioma del usuario
+- Formatea respuestas con Markdown
+- Sé conciso pero útil`;
+
+  const activeSystemPrompt = terminalAvailable ? SYSTEM_PROMPT : SYSTEM_PROMPT_OFFLINE;
+  const activeTools = terminalAvailable ? tools : [];
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -132,8 +150,8 @@ export async function POST(req: Request) {
           const response = await client.messages.create({
             model: "claude-sonnet-4-20250514",
             max_tokens: 4096,
-            system: SYSTEM_PROMPT,
-            tools,
+            system: activeSystemPrompt,
+            ...(activeTools.length > 0 ? { tools: activeTools } : {}),
             messages: currentMessages,
             stream: true,
           });

@@ -32,7 +32,11 @@ interface Message {
   hasAudio?: boolean;
 }
 
-export default function ChatPanel() {
+interface ChatPanelProps {
+  terminalAvailable?: boolean;
+}
+
+export default function ChatPanel({ terminalAvailable = true }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -112,7 +116,7 @@ export default function ChatPanel() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({ messages: apiMessages, terminalAvailable }),
       });
 
       if (!response.ok) {
@@ -274,7 +278,9 @@ export default function ChatPanel() {
           </div>
           <div>
             <h2 className="text-sm font-semibold text-zinc-100">Tutto</h2>
-            <p className="text-xs text-zinc-500">Voz + Terminal + IA</p>
+            <p className="text-xs text-zinc-500">
+              {terminalAvailable ? "Voz + Terminal + IA" : "Voz + IA (sin terminal)"}
+            </p>
           </div>
         </div>
         <button
@@ -301,16 +307,24 @@ export default function ChatPanel() {
                 Hola, soy Tutto
               </h3>
               <p className="text-sm text-zinc-500 mt-1 max-w-sm">
-                Habla conmigo por texto o por voz. Puedo ejecutar comandos,
-                controlar Claude Code en la terminal, y responderte con audio.
+                {terminalAvailable
+                  ? "Habla conmigo por texto o por voz. Puedo ejecutar comandos, controlar Claude Code en la terminal, y responderte con audio."
+                  : "Habla conmigo por texto o por voz. La terminal no esta disponible ahora, pero puedo ayudarte con preguntas, codigo, y mas."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2 justify-center max-w-md">
-              {[
-                "Ejecuta ls -la en la terminal",
-                "Abre Claude Code en la terminal",
-                "Cual es el uso de disco?",
-              ].map((suggestion) => (
+              {(terminalAvailable
+                ? [
+                    "Ejecuta ls -la en la terminal",
+                    "Abre Claude Code en la terminal",
+                    "Cual es el uso de disco?",
+                  ]
+                : [
+                    "Explicame como funciona async/await",
+                    "Ayudame a escribir un email",
+                    "Que puedo cocinar con pollo?",
+                  ]
+              ).map((suggestion) => (
                 <button
                   key={suggestion}
                   onClick={() => setInput(suggestion)}

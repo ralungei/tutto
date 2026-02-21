@@ -67,5 +67,9 @@ export async function POST(req: Request) {
     return Response.json({ ok: true });
   }
 
+  if (body.type === "ping") {
+    return Response.json({ ok: true, status: "connected" });
+  }
+
   return Response.json({ error: "Unknown type" }, { status: 400 });
 }
