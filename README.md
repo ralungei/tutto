@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tutto - Tu asistente para todo
 
-## Getting Started
+Asistente personal con terminal web, voz e IA. Ejecuta comandos, habla con Claude, y controla todo desde cualquier lugar.
 
-First, run the development server:
+## Configuración
 
 ```bash
+cp .env.local.example .env.local  # o edita .env.local directamente
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Variables de entorno
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Requerida | Descripción |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Sí | API key de Anthropic para el chat con IA |
+| `ELEVENLABS_API_KEY` | No | API key de ElevenLabs para respuestas de voz (TTS) |
+| `ELEVENLABS_VOICE_ID` | No | ID de la voz de ElevenLabs (por defecto "Rachel") |
+| `TUTTO_SECRET` | No | Token de acceso para proteger la app |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Autenticación
 
-## Learn More
+Por defecto Tutto funciona sin autenticación (modo local). Si lo expones por internet (túnel, VPS, etc.), configura `TUTTO_SECRET` para protegerlo:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# En .env.local
+TUTTO_SECRET=mi-token-super-secreto
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Cómo funciona
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Al abrir la app aparece una pantalla de login pidiendo el token
+- El token se guarda en `sessionStorage` (se borra al cerrar la pestaña)
+- Todas las llamadas a `/api/*` requieren `Authorization: Bearer <token>`
+- Las conexiones SSE (terminal, voz) envían el token como query param
+- **Rate limiting**: 10 intentos fallidos por minuto por IP → bloqueo temporal
+- **Sin `TUTTO_SECRET`**: todo funciona sin login, cero fricción
 
-## Deploy on Vercel
+## Stack
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Frontend**: Next.js 16, React, Tailwind CSS, xterm.js
+- **Backend**: Next.js API routes, node-pty
+- **IA**: Claude (Anthropic API)
+- **Voz**: ElevenLabs (TTS/STT), Web Speech API (fallback)
