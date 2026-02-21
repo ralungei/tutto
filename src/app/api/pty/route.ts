@@ -1,6 +1,7 @@
 import {
   writeToPty,
   addOutputListener,
+  getBufferedOutput,
   resizePty,
 } from "@/lib/pty-manager";
 
@@ -35,12 +36,22 @@ export async function GET() {
         }
       }, 30000);
 
-      // Cleanup when client disconnects
+      // Send connected event
       controller.enqueue(
         encoder.encode(
           `data: ${JSON.stringify({ type: "connected" })}\n\n`
         )
       );
+
+      // Replay buffered output so new connections see existing terminal state
+      const buffer = getBufferedOutput();
+      if (buffer) {
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "output", data: buffer })}\n\n`
+          )
+        );
+      }
     },
   });
 

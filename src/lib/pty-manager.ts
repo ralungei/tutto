@@ -56,6 +56,10 @@ export function writeToPty(data: string) {
   getManager().process.write(data);
 }
 
+export function getBufferedOutput(): string {
+  return getManager().outputBuffer.join("");
+}
+
 export function addOutputListener(cb: (data: string) => void): () => void {
   const manager = getManager();
   manager.listeners.add(cb);
